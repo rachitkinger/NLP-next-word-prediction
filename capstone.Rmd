@@ -1,0 +1,216 @@
+---
+title: "Text Analytics - Predicting The Next Word"
+author: "Rachit Kinger"
+date: "29th October 2017"
+output:
+  html_document:
+    df_print: paged
+---
+
+# Milestone Report  
+The goal of the project is to build an app that can predict what the user is going to write next. The app consider the English language only. To build this app we are going to use the corpus of blogs, news articles and tweets provided by SwiftKey.  
+
+This is the first milestone report for the JHU data science specialisation capstone project.  
+
+## Exploring the corpus  
+The corpus has been download from SwiftKey and relevant files have been extracted  
+
+```{r}
+load_stuff <- function() {
+    library(tidytext)
+    library(dplyr)
+    library(tidyr)
+    library(tm)
+    library(quanteda)
+    library(ggplot2)
+    }
+
+suppressPackageStartupMessages(load_stuff())
+```
+
+### Exploring comparative sizes & lengths  
+Let's first explore the size of the files and length of the text contained within.
+
+```{r message=FALSE, warning=FALSE}
+path <- "extracted_data/final/en_US/"
+filenames <- list.files(path, pattern = "*.txt")
+file_info <- data_frame(Name = "", Size_in_MB = 0)
+for(i in 1:length(filenames)) {
+   file_info[i,1] <- filenames[i]
+   file_info[i,2] <- round(file.info(paste(path,filenames[i], sep = ""))$size/1024^2,1)
+}
+
+blogpath <- "extracted_data/final/en_US/en_US.blogs.txt"
+file1 <- file(blogpath, open = "rb")    
+blogs <- readLines(blogpath, encoding = "UTF-8", skipNul = TRUE)
+close(file1)
+
+newspath <- "extracted_data/final/en_US/en_US.news.txt"
+file2 <- file(newspath, open = "rb")    
+news <- readLines(newspath, encoding = "UTF-8", skipNul = TRUE)
+close(file2)
+
+tweetpath <- "extracted_data/final/en_US/en_US.twitter.txt"
+file3 <- file(tweetpath, open = "rb")    
+twitter <- readLines(tweetpath, encoding = "UTF-8", skipNul = TRUE)
+close(file3)
+
+names <- c("Blogs", "News", "Twitter")
+numlines <- data_frame( Names = names,
+            No_of_Lines_In_Thousands = c(round(length(blogs)/10^3,1),
+            round(length(news)/10^3,1),
+            round(length(twitter)/10^3,1)))
+
+cbind(numlines, file_info[,2])
+```
+
+All the files are greater than 150MB in size with Blogs being the biggest file c.200MB in size. Now let's load the data into the environment. The corpus will be uploaded into three datasets named appropriately.  
+
+
+Twitter seems to have the largest number of lines, in excess of 2 million. This is probably due to the nature of Twitter, i.e., each line of Twitter is less than or equal to 140 characters, whereas in blogs and news there is no such restraint. Let's put this in perspective and take a look at the size of the file and the number of lines it contains.  
+
+
+Now we can see that despite having the largest number of lines, the Twitter dataset happens to be the smallest in size. Let's try and understand a little bit about the distribution of lines.  
+
+```{r}
+data.frame(Dataset = names,
+    rbind(summary(nchar(blogs)), summary(nchar(news)), summary(nchar(twitter))))
+```
+
+So we have the comparative distributions of the length of line across each of our datasets. Twitter is no surprise - it is by design limited to a max of 140 characters. Let's take a look at the distribution of line lenghts.  
+
+```{r warning=FALSE, message = FALSE}
+linelengths <- rbind(data.frame(source = rep("Blogs", length(blogs)), Length = nchar(blogs)),
+                     data.frame(source = rep("News", length(news)), Length = nchar(news)),
+                     data.frame(source = rep("Twitter", length(twitter)), Length = nchar(twitter)))
+ggplot(linelengths, aes(Length)) +
+    geom_density(aes(fill = source), alpha = 0.5) +
+    scale_x_continuous(limits=c(0,450)) +
+    ggtitle("Distribution of Line Lengths") +
+    xlab("Line Length") + ylab("Density")
+```
+_NOTE: To understand the distribution we have not plotted the lines which have greater than 450 characters. This should not affect shape of the distribution since these represent approximately 4% of the data, and one can imagine a large right skew in the Blogs and News curves to get a more accurate view of the distribution._    
+
+As one can imagine, we get a wide variety of line lengths in Blogs and News and in general, News articles tend to be longer than Blogs, so we might find a rich variety of words in this corpus.  
+
+### Exploring the content  
+
+Let's now take a look at content to get a better understanding of the corpus. To do that we will take a look at the most common words, then the most commont phrases (2 and 3 words together). 
+
+We will take a sample of the corpus, 1000 lines from each source, and see what the difference in these most commonly used words are. 
+
+Before we proceed we will have to consider what all we want to include in our token analysis. Below are the most common considerations:    
+
+- case sensitivity?  
+- punctuation?  
+- numbers?  
+- stopwords? most commonly occurring words which don't add much meaning beyond grammar     
+- symbols (@, \#, etc.)?  
+- stemming i.e., words that are different forms of the same word rood e.g., run/runs/runing?   
+- obscene words, profanity, or bad words like swear words and rude language?  
+
+Since our ultimate goal is to predict the next word once a certain set of words has been written, at this stage we will not remove any stop words. The only words we will remove at this stage are bad words since we are building an app for public use. However, we will do the following processing on the datasets:  
+
+1. convert to lowercase  
+2. remove punctuations  
+3. remove any special characters and symbols  
+4. steming - _for now we will do stemming but we might reconsider later_   
+
+_**NOTE ON STOPWORDS:**_ *Stopwords have not been removed because these are the most commonly occuring words in written text and if we want our model to predict what people are going to type, we need to know what words accompany these stopwords and in what order. Hence stopwords are going to be an important feature of our analysis.*  
+
+
+```{r sampling_and_preprocessing, warning=FALSE, message=FALSE} 
+blog.sample <- data.frame(Source = rep("Blogs",1000),
+                          text = sample(blogs, 1000, replace = FALSE))
+news.sample <- data.frame(Source = rep("News",1000),
+                          text = sample(news, 1000, replace = FALSE))
+twitter.sample <- data.frame(Source = rep("Twitter",1000),
+                          text = sample(twitter, 1000, replace = FALSE))
+sample <- rbind(blog.sample, news.sample, twitter.sample)
+sample$text <- as.character(sample$text)
+
+#remove punct, symbols, numbers & hyphen
+sample.tokens <- tokens(sample$text, what = "word",
+                       remove_numbers = TRUE, remove_punct = TRUE,
+                       remove_symbols = TRUE, remove_hyphens = TRUE)
+#convert to lower case
+sample.tokens <- tokens_tolower(sample.tokens)
+#stemming
+sample.tokens <- tokens_wordstem(sample.tokens, language = "english")
+
+#download and remove bad words/obsenity/profanity
+bad.path<-"https://raw.githubusercontent.com/shutterstock/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en"
+if (!file.exists("en_bws.txt")){download.file(bad.path, destfile="en_bws.txt")}
+badwords <-read.table("en_bws.txt", header=FALSE, sep="\n", strip.white=TRUE)
+names(badwords)<-"Bad Words"
+sample.tokens<- removeFeatures(sample.tokens, badwords[,1], case_insensitive = TRUE)
+
+#create bigrams  
+#remove punct, symbols, numbers & hyphen
+sample.tokens.bigrams <- tokens(sample$text, what = "word",
+                       remove_numbers = TRUE, remove_punct = TRUE,
+                       remove_symbols = TRUE, remove_hyphens = TRUE,
+                       ngrams = 2L)
+#convert to lower case
+sample.tokens.bigrams <- tokens_tolower(sample.tokens.bigrams)
+#stemming
+sample.tokens.bigrams <- tokens_wordstem(sample.tokens.bigrams, language = "english")
+
+#remove bad words/obsenity/profanity
+sample.tokens.bigrams<- removeFeatures(sample.tokens.bigrams, badwords[,1], case_insensitive = TRUE)
+
+```
+
+Now that we have created our tokens of one, two and three words. Let's visualise the most common ones across. **NOTE: Stopwords have not been removed at this stage**    
+
+```{r}
+sample.tokens.dfm <- dfm(sample.tokens)
+sample.tokens.bigrams.dfm <- dfm(sample.tokens.bigrams)
+
+sample.tokens.df <- as.data.frame(sample.tokens.dfm)
+sample.tokens.bigrams.df <- as.data.frame(sample.tokens.bigrams.dfm)
+
+sample.tokens.df <- sample.tokens.df[,order(colSums(sample.tokens.df),decreasing = TRUE)]
+sample.tokens.bigrams.df <- sample.tokens.bigrams.df[,order(colSums(sample.tokens.bigrams.df),decreasing = TRUE)]
+
+
+sample.tokens.df <- cbind(Source = sample$Source, sample.tokens.df)
+sample.tokens.bigrams.df <- cbind(Source = sample$Source, sample.tokens.bigrams.df)
+
+sample.tokens.df[,1:21] %>% 
+    gather(Words, Frequency, -Source) %>% 
+    group_by(Words, Source) %>% 
+    summarise(Frequency = sum(Frequency)) %>% 
+    ggplot(aes(x = Words, y = Frequency, fill = Source)) + 
+        geom_col(position = "dodge") +
+        ggtitle("20 Most Common Words", subtitle = "Categorised By Source")
+
+
+sample.tokens.bigrams.df[,1:21] %>% 
+    gather(Words, Frequency, -Source) %>% 
+    group_by(Words, Source) %>% 
+    summarise(Frequency = sum(Frequency)) %>% 
+    ggplot(aes(x = Words, y = Frequency, fill = Source)) + 
+        geom_col(position = "dodge") +
+        theme(axis.text.x=element_text(angle=90,hjust=1)) +
+        ggtitle("20 Most Common Phrases", subtitle = "Phrase of two words only, categorised by source")
+
+```
+
+Since we have not removed stopwords we can see that the most common words do have a very strong presence in the most common phrases as well. This feature will help us later to predict which words accompany the most common words when people write text in the English language.  
+
+# Next Steps  
+For the next step we will also take a look at the same data without stopwords, and then see which stopwords are followed by the most common non-stopwords. This will help us understand how users move in and out of stopwords when they write in English.   
+
+Based on the understanding we develop on this we will decide which type of algorithm we will use.  
+
+
+
+
+**END OF REPORT** 
+
+
+
+
+
+
