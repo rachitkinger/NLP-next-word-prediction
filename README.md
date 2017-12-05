@@ -1,37 +1,40 @@
-## Welcome to GitHub Pages
+# Next Word Prediction App
 
-You can use the [editor on GitHub](https://github.com/rachitkinger/capstone-NLP/edit/master/README.md) to maintain and preview the content for your website in Markdown files.
+## Introduction  
+As part of the Capstone project for Data Science Specialisation by John Hopkins University (JHU) on Coursera,
+a word prediction app was built. The only function of this app is to predict the next word that a user is about
+to type based on the words that have already been entered.  
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+For this project, JHU partnered with [SwiftKey](http://swiftkey.com) who provided a corpus of text on which the
+**natural language processing** algorithm was based. 
 
-### Markdown
+The data used in the model came from a **corpus** called HC Corpora (www.corpora.heliohost.org)
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+## Algorithm Development  
+A classic **N-gram** model [1] was used to build the algorithm for the app. However, pre-processing or cleaning up
+of the data was done in order to remove punctuations, expletives, etc.  
 
-```markdown
-Syntax highlighted code block
+Based on this a sample of the entire data was used (since only limited computing power was available) and 
+Maximum Likelihood Estimation or MLE was applied on the tokens.  
 
-# Header 1
-## Header 2
-### Header 3
+The tokens used were unigrams, bigrams and trigrams. In order to improve accuracy with limited computing resourced,
+Jelinek-Mercer smoothing algorithm was used. 
 
-- Bulleted
-- List
+But when interpolation failed (mainly because we used a sample of the data) part-of-speech tagging or POST was used 
+to provide default predictions.  
 
-1. Numbered
-2. List
+Profanity filter was applied on all outputs based on the Google's bad word list
 
-**Bold** and _Italic_ and `Code` text
+## The Shiny App  
+The app accepts a phrase as input, and gives the next word that the user is most likely to write next. Simple!
 
-[Link](url) and ![Image](src)
-```
+The prediction is based on the linear interpolation of unigrams, bigrams and trigrams. The web-based application can be found 
+<a href="https://jpdms.shinyapps.io/next-word-prediction/"> here</a>. 
 
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
+## Using the Application
 
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/rachitkinger/capstone-NLP/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+It is a simple app with a single purpose. Despite that (and probably because of that) it can
+find its uses in many situations. For educational use, for speeding up typing on phones, or checking
+writing style or even grammar (if we can augment it with grammatically correct corpus!).  
+The user enters some text (in English and without punctuation) in the input box. 
+As the user types, the text is echoed along with a suggested next word.
