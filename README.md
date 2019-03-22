@@ -1,8 +1,7 @@
 # Next Word Prediction App
 
 ## Introduction  
-As part of the Capstone project for Data Science Specialisation by John Hopkins University (JHU) on Coursera,
-a word prediction app was built. The only function of this app is to predict the next word that a user is about
+This is a word prediction app. The only function of this app is to predict the next word that a user is about
 to type based on the words that have already been entered.  
 
 For this project, JHU partnered with [SwiftKey](http://swiftkey.com) who provided a corpus of text on which the
